@@ -1,0 +1,47 @@
+# IntelliJ / VSCode
+.idea/
+.vscode/
+
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+
+# Spring Boot
+.springBeans/
+
+# Logs
+logs/
+*.log
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+env/
+/.env
+
+# Prometheus data
+prometheus-*/data/
+prometheus-3.5.1.windows-amd64/
+*.exe
+
+# Docker
+**/docker-compose.override.yml
+*.tar
+
+# IDE workspace
+workspace/
+
+# Misc
+*.swp
+*~
+
