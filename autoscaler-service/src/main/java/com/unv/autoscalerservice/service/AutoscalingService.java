@@ -25,6 +25,9 @@ public class AutoscalingService {
     @Autowired
     private FPRDecisionEngine fprDecisionEngine;
 
+    @Autowired
+    private DashboardService dashboardService;
+
     private final Map<String, Integer> replicas = new HashMap<>();
     private final Map<String, Double> previousArrivalRates = new HashMap<>();
     private final Map<String, Long> lastScaleTime = new HashMap<>();
@@ -91,6 +94,14 @@ public class AutoscalingService {
             System.out.println("Δλ = " + delta);
             System.out.println("ρ = " + rho);
 
+            Map<String, Object> metricsData = new HashMap<>();
+            metricsData.put("latency", latency);
+            metricsData.put("arrivalRate", arrivalRate);
+            metricsData.put("delta", delta);
+            metricsData.put("rho", rho);
+            metricsData.put("replicas", currentReplicas);
+            dashboardService.logEvent(service, "METRICS_COLLECTED", metricsData);
+
             // -------- IDLE DETECTION --------
             if (arrivalRate == 0 && currentReplicas > MIN_REPLICAS) {
 
@@ -98,6 +109,12 @@ public class AutoscalingService {
 
                 System.out.println("IDLE → SCALE IN → " + service +
                         " replicas=" + newReplicas);
+
+                Map<String, Object> idleData = new HashMap<>();
+                idleData.put("replicas", newReplicas);
+                idleData.put("reason", "IDLE");
+                idleData.put("action", "SCALE_IN");
+                dashboardService.logEvent(service, "IDLE SCALE IN", idleData);
 
                 replicas.put(service, newReplicas);
                 dockerScalingService.scaleIn(service, newReplicas);
@@ -118,6 +135,15 @@ public class AutoscalingService {
 
                 System.out.println("🔥 FPR PREEMPTIVE SCALE OUT → " +
                         service + " replicas=" + newReplicas);
+
+                Map<String, Object> fprData = new HashMap<>();
+                fprData.put("replicas", newReplicas);
+                fprData.put("algorithm", "FPR");
+                fprData.put("action", "SCALE_OUT");
+                fprData.put("latency", latency);
+                fprData.put("arrivalRate", arrivalRate);
+                fprData.put("delta", delta);
+                dashboardService.logEvent(service, "FPR PREEMPTIVE SCALE OUT", fprData);
 
                 replicas.put(service, newReplicas);
                 dockerScalingService.scaleOut(service, newReplicas);
@@ -156,6 +182,14 @@ public class AutoscalingService {
 
                     System.out.println("SUSTAINED UNDERLOAD → SCALE IN → " +
                             service + " replicas=" + newReplicas);
+
+                    Map<String, Object> scaleInData = new HashMap<>();
+                    scaleInData.put("replicas", newReplicas);
+                    scaleInData.put("algorithm", "MFDS");
+                    scaleInData.put("action", "SCALE_IN");
+                    scaleInData.put("rho", rho);
+                    scaleInData.put("underUtilCount", underUtilizationCounter.get(service));
+                    dashboardService.logEvent(service, "MFDS SUSTAINED UNDERLOAD SCALE IN", scaleInData);
 
                     replicas.put(service, newReplicas);
                     dockerScalingService.scaleIn(service, newReplicas);
@@ -196,6 +230,15 @@ public class AutoscalingService {
 
                     System.out.println("MSO SCALE OUT → " +
                             service + " replicas=" + newReplicas);
+
+                    Map<String, Object> msoData = new HashMap<>();
+                    msoData.put("replicas", newReplicas);
+                    msoData.put("algorithm", "MSO");
+                    msoData.put("action", "SCALE_OUT");
+                    msoData.put("rho", rho);
+                    msoData.put("Rm", Rm);
+                    msoData.put("ratio", ratio);
+                    dashboardService.logEvent(service, "MSO SCALE OUT", msoData);
 
                     replicas.put(service, newReplicas);
                     dockerScalingService.scaleOut(service, newReplicas);
