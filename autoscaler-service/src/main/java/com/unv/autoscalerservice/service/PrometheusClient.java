@@ -24,7 +24,7 @@ public class PrometheusClient {
                             java.net.URLEncoder.encode(promQuery, java.nio.charset.StandardCharsets.UTF_8)
             );
 
-            System.out.println("FINAL URI = " + uri);
+//            System.out.println("FINAL URI = " + uri);
 
             String response = restTemplate.getForObject(uri, String.class);
 
@@ -36,7 +36,7 @@ public class PrometheusClient {
             }
 
             String value = result.get(0).path("value").get(1).asText();
-            System.out.println("PROMETHEUS VALUE = " + value);
+//            System.out.println("PROMETHEUS VALUE = " + value);
 
             return Double.parseDouble(value);
 

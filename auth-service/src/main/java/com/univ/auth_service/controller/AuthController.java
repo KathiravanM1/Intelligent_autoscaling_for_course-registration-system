@@ -15,9 +15,16 @@ public class AuthController {
 
     @PostMapping("/login")
     public String loginAndRegister() throws InterruptedException {
-        // Simulate authentication delay
-        Thread.sleep( 120);
 
-        return chainedService.completeRegistrationFlow();
+        Thread.sleep(100);
+
+        try {
+            String result = chainedService.completeRegistrationFlow();
+//            System.out.println("CHAIN SUCCESS");
+            return result;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "ERROR_IN_CHAIN";
+        }
     }
 }

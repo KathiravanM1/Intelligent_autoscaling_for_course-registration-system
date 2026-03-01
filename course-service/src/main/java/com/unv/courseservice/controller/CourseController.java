@@ -9,7 +9,7 @@ public class CourseController {
     @GetMapping("/courses")
     public String getCourses() throws InterruptedException {
 
-        Thread.sleep(80);
+        Thread.sleep(100);
         return "COURSE_LIST";
     }
 }

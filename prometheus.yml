@@ -1,0 +1,15 @@
+scrape_configs:
+  - job_name: 'auth-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['auth-service:8080']
+
+  - job_name: 'course-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['course-service:8081']
+
+  - job_name: 'seat-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['seat-service:8082']

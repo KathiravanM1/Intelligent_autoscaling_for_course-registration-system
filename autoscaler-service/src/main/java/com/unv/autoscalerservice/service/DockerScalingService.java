@@ -2,35 +2,35 @@ package com.unv.autoscalerservice.service;
 
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-
 @Service
 public class DockerScalingService {
 
-    public void scaleOut(String serviceName, int replicaId) {
-        try {
-            ProcessBuilder builder = new ProcessBuilder(
-                    "docker",
-                    "run",
-                    "-d",
-                    "--network",
-                    "course-network",
-                    "--name",
-                    serviceName + replicaId,
-                    serviceName
-            );
-
-            builder.start();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public void scaleOut(String serviceName, int replicaCount) {
+        scale(serviceName, replicaCount);
     }
 
-    public void scaleIn(String containerName) {
+    public void scaleIn(String serviceName, int replicaCount) {
+        scale(serviceName, replicaCount);
+    }
+
+    private void scale(String serviceName, int replicaCount) {
         try {
-            new ProcessBuilder("docker", "stop", containerName).start();
-            new ProcessBuilder("docker", "rm", containerName).start();
-        } catch (IOException e) {
+
+            // Stack name is "autoscale"
+            String fullServiceName = "autoscale_" + serviceName;
+
+            ProcessBuilder builder = new ProcessBuilder(
+                    "docker",
+                    "service",
+                    "scale",
+                    fullServiceName + "=" + replicaCount
+            );
+
+            builder.inheritIO();
+            Process process = builder.start();
+            process.waitFor();
+
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }

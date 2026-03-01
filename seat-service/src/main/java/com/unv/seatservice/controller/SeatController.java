@@ -8,7 +8,7 @@ public class SeatController {
     @PostMapping("/register")
     public String registerSeat() throws InterruptedException {
         // Simulate seat locking + DB write + contention
-        Thread.sleep(250);
+        Thread.sleep(100);
         return "SEAT_REGISTERED";
     }
 }

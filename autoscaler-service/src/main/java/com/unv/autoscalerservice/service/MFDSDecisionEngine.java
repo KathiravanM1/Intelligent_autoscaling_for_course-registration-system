@@ -15,13 +15,26 @@ public class MFDSDecisionEngine {
 
     public ScalingAction decide(MFDSFeatures features) {
 
-        if (features.getLatency() > tmax &&
-                features.getArrivalRateDelta() > 0) {
+        double lambda = features.getArrivalRate();
+        double latency = features.getLatency();
+        int replicas = features.getCurrentReplicas();
+
+        if (latency <= 0 || replicas <= 0) {
+            return ScalingAction.NO_ACTION;
+        }
+
+        double mu = 1.0 / latency;
+        double rho = lambda / (replicas * mu);
+
+        System.out.println("MFDS → ρ=" + rho);
+
+        // SCALE OUT
+        if (rho > 0.75) {
             return ScalingAction.SCALE_OUT;
         }
 
-        if (features.getLatency() < tmin &&
-                features.getArrivalRateDelta() < 0) {
+        // SCALE IN (pure utilization based)
+        if (rho < 0.50) {
             return ScalingAction.SCALE_IN;
         }
 
