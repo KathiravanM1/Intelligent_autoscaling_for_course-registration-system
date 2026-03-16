@@ -36,7 +36,10 @@ public class PrometheusClient {
             }
 
             String value = result.get(0).path("value").get(1).asText();
-//            System.out.println("PROMETHEUS VALUE = " + value);
+
+            if (value.equalsIgnoreCase("NaN") || value.equalsIgnoreCase("Inf") || value.equalsIgnoreCase("-Inf")) {
+                return 0.0;
+            }
 
             return Double.parseDouble(value);
 
