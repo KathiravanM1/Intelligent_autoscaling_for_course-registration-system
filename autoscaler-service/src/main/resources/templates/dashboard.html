@@ -1,89 +1,436 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Autoscaling Dashboard</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0a0e27; color: #fff; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center; }
-        .container { padding: 20px; max-width: 1400px; margin: 0 auto; }
-        .services { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px; }
-        .service-card { background: #1a1f3a; border-radius: 10px; padding: 20px; border: 2px solid #2d3561; }
-        .service-name { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #667eea; }
-        .metric { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2d3561; }
-        .metric-label { color: #8b92b8; }
-        .metric-value { font-weight: bold; color: #fff; }
-        .events { background: #1a1f3a; border-radius: 10px; padding: 20px; }
-        .event { background: #0f1329; margin: 10px 0; padding: 15px; border-radius: 5px; border-left: 4px solid #667eea; }
-        .event-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
-        .event-service { font-weight: bold; color: #667eea; }
-        .event-time { color: #8b92b8; font-size: 12px; }
-        .event-step { color: #ffd700; font-weight: bold; margin-bottom: 8px; }
-        .event-data { color: #b8bfdb; font-size: 14px; }
-        .scale-out { border-left-color: #ff6b6b; }
-        .scale-in { border-left-color: #51cf66; }
-        .no-action { border-left-color: #8b92b8; }
-        .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-        .badge-out { background: #ff6b6b; }
-        .badge-in { background: #51cf66; }
-        .badge-idle { background: #8b92b8; }
-        h2 { margin-bottom: 15px; color: #667eea; }
-    </style>
+<meta charset="UTF-8"/>
+<title>Autoscaling Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#0a0e1a;color:#e0e6ff;min-height:100vh}
+.header{background:linear-gradient(135deg,#1a1f4e,#2d1b69);padding:18px 30px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #2a2f5e}
+.header h1{font-size:22px;color:#a78bfa}
+.header .live{display:flex;align-items:center;gap:8px;font-size:13px;color:#6ee7b7}
+.dot{width:8px;height:8px;border-radius:50%;background:#6ee7b7;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.tabs{display:flex;gap:0;border-bottom:1px solid #1e2347;padding:0 30px;background:#0d1124}
+.tab{padding:14px 24px;cursor:pointer;font-size:14px;color:#6b7db3;border-bottom:2px solid transparent;transition:.2s}
+.tab.active{color:#a78bfa;border-bottom-color:#a78bfa}
+.tab:hover{color:#c4b5fd}
+.content{padding:24px 30px;display:none}
+.content.active{display:block}
+
+/* ── TOPOLOGY TAB ── */
+.topology-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:24px}
+.service-block{background:#111827;border:1px solid #1e2347;border-radius:12px;padding:20px;position:relative;overflow:hidden}
+.service-block.scaling-out{border-color:#f59e0b;box-shadow:0 0 16px rgba(245,158,11,.3)}
+.service-block.scaling-in{border-color:#6ee7b7;box-shadow:0 0 16px rgba(110,231,183,.3)}
+.service-title{font-size:15px;font-weight:600;color:#a78bfa;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.service-title .badge{font-size:11px;padding:2px 8px;border-radius:10px;background:#1e2347;color:#6b7db3}
+.containers-row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;min-height:60px}
+.container-icon{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:default;transition:.3s}
+.container-icon .server{width:44px;height:44px;background:linear-gradient(135deg,#1e3a5f,#1e4d8c);border:1px solid #2563eb;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;position:relative;transition:.3s}
+.container-icon .server.active{border-color:#6ee7b7;box-shadow:0 0 10px rgba(110,231,183,.4)}
+.container-icon .server.hit{animation:serverHit .4s ease}
+@keyframes serverHit{0%{transform:scale(1)}50%{transform:scale(1.15);box-shadow:0 0 20px rgba(167,139,250,.8)}100%{transform:scale(1)}}
+.container-icon .cid{font-size:9px;color:#6b7db3;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+.container-icon .req-count{font-size:10px;color:#a78bfa;font-weight:600}
+.lambda-bar-wrap{margin-top:8px}
+.lambda-bar-label{font-size:11px;color:#6b7db3;margin-bottom:4px;display:flex;justify-content:space-between}
+.lambda-bar{height:6px;background:#1e2347;border-radius:3px;overflow:hidden}
+.lambda-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#6366f1,#a78bfa);transition:width .6s ease}
+.service-mini-metrics{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px}
+.mini-metric{background:#0d1124;border-radius:6px;padding:6px 10px}
+.mini-metric .label{font-size:10px;color:#6b7db3}
+.mini-metric .value{font-size:13px;font-weight:600;color:#e0e6ff}
+.action-badge{display:inline-block;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;margin-top:10px}
+.action-SCALE_OUT{background:#7c3aed;color:#fff}
+.action-SCALE_IN{background:#065f46;color:#6ee7b7}
+.action-NO_ACTION{background:#1e2347;color:#6b7db3}
+
+/* request flow animation */
+.flow-section{background:#111827;border:1px solid #1e2347;border-radius:12px;padding:20px;margin-bottom:20px}
+.flow-title{font-size:14px;color:#a78bfa;margin-bottom:14px;font-weight:600}
+.flow-canvas-wrap{position:relative;height:120px;overflow:hidden}
+#flowCanvas{width:100%;height:120px}
+.flow-log{max-height:160px;overflow-y:auto;margin-top:12px}
+.flow-entry{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;margin-bottom:4px;background:#0d1124;font-size:12px}
+.flow-entry .arrow{color:#a78bfa;font-size:16px}
+.flow-entry .svc{color:#6ee7b7;font-weight:600;min-width:110px}
+.flow-entry .cid{color:#fbbf24;font-family:monospace}
+.flow-entry .share{color:#6b7db3;margin-left:auto}
+.flow-entry .time{color:#374151;font-size:10px}
+
+/* ── METRICS TAB ── */
+.metrics-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:24px}
+.metric-card{background:#111827;border:1px solid #1e2347;border-radius:12px;padding:20px}
+.metric-card h3{font-size:14px;color:#a78bfa;margin-bottom:14px;font-weight:600}
+.metric-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1a1f3a}
+.metric-row:last-child{border-bottom:none}
+.metric-row .name{font-size:12px;color:#6b7db3}
+.metric-row .val{font-size:13px;font-weight:600;color:#e0e6ff;font-family:monospace}
+.metric-row .val.warn{color:#f59e0b}
+.metric-row .val.danger{color:#ef4444}
+.metric-row .val.good{color:#6ee7b7}
+.formulas-section{background:#111827;border:1px solid #1e2347;border-radius:12px;padding:24px}
+.formulas-section h3{font-size:15px;color:#a78bfa;margin-bottom:18px;font-weight:600}
+.formula-block{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid #1a1f3a}
+.formula-block:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.formula-name{font-size:13px;font-weight:600;color:#c4b5fd;margin-bottom:6px}
+.formula-eq{font-family:monospace;font-size:13px;color:#fbbf24;background:#0d1124;padding:8px 12px;border-radius:6px;margin-bottom:6px;border-left:3px solid #7c3aed}
+.formula-desc{font-size:12px;color:#6b7db3;line-height:1.6}
+
+/* ── EVENTS TAB ── */
+.events-list{display:flex;flex-direction:column;gap:8px}
+.event-card{background:#111827;border-radius:8px;padding:14px 16px;border-left:3px solid #1e2347;display:flex;gap:14px;align-items:flex-start}
+.event-card.SCALE_OUT,.event-card.MFDS_MSO_SCALE_OUT{border-left-color:#7c3aed}
+.event-card.SCALE_IN,.event-card.IDLE_SCALE_IN,.event-card.MSO_SCALE_IN,.event-card.MFDS_SCALE_IN{border-left-color:#6ee7b7}
+.event-card.METRICS_COLLECTED{border-left-color:#1e2347}
+.event-time{font-size:11px;color:#374151;white-space:nowrap;min-width:70px}
+.event-svc{font-size:12px;font-weight:600;color:#a78bfa;min-width:110px}
+.event-step{font-size:12px;color:#e0e6ff;font-weight:600}
+.event-data{font-size:11px;color:#6b7db3;margin-top:4px;font-family:monospace}
+.filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.filter-btn{padding:5px 14px;border-radius:20px;border:1px solid #1e2347;background:#0d1124;color:#6b7db3;cursor:pointer;font-size:12px;transition:.2s}
+.filter-btn.active{background:#1e2347;color:#a78bfa;border-color:#a78bfa}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#0a0e1a}
+::-webkit-scrollbar-thumb{background:#1e2347;border-radius:3px}
+</style>
 </head>
 <body>
-    <div class="header">
-        <h1>🚀 Intelligent Autoscaling Dashboard</h1>
-        <p>Real-time monitoring of MFDS + FPR algorithms</p>
+
+<div class="header">
+  <h1>Intelligent Autoscaling Dashboard</h1>
+  <div class="live"><div class="dot"></div> Live — refreshes every 3s</div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('topology',this)">Topology</div>
+  <div class="tab" onclick="switchTab('metrics',this)">Metrics</div>
+  <div class="tab" onclick="switchTab('events',this)">Events</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ TOPOLOGY -->
+<div id="tab-topology" class="content active">
+  <div class="topology-grid" id="topologyGrid"></div>
+
+  <div class="flow-section">
+    <div class="flow-title">Live Request Flow — which container is serving each request</div>
+    <canvas id="flowCanvas" height="120"></canvas>
+    <div class="flow-log" id="flowLog"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ METRICS -->
+<div id="tab-metrics" class="content">
+  <div class="metrics-grid" id="metricsGrid"></div>
+
+  <div class="formulas-section">
+    <h3>Queue-Theoretic Formulas (M/M/N Model)</h3>
+
+    <div class="formula-block">
+      <div class="formula-name">Service Rate (μ)</div>
+      <div class="formula-eq">μ = 1 / latency</div>
+      <div class="formula-desc">How many requests one replica can process per second. If latency = 0.1s, then μ = 10 req/s per replica.</div>
     </div>
-    <div class="container">
-        <h2>Service Metrics</h2>
-        <div class="services" id="services"></div>
-        <h2>Autoscaling Events</h2>
-        <div class="events" id="events"></div>
+
+    <div class="formula-block">
+      <div class="formula-name">Utilization (ρ)</div>
+      <div class="formula-eq">ρ = λ / (N × μ)</div>
+      <div class="formula-desc">How busy the system is. λ = arrival rate, N = replicas, μ = service rate. ρ must be &lt; 1.0 for stability. ρ = 0.8 means 80% busy.</div>
     </div>
-    <script>
-        const services = ['auth-service', 'course-service', 'seat-service'];
-        const serviceData = {};
-        
-        function updateDashboard() {
-            fetch('/api/events')
-                .then(r => r.json())
-                .then(events => {
-                    events.forEach(e => {
-                        if (!serviceData[e.service]) serviceData[e.service] = {};
-                        Object.assign(serviceData[e.service], e.data);
-                    });
-                    
-                    document.getElementById('services').innerHTML = services.map(s => {
-                        const d = serviceData[s] || {};
-                        return `<div class="service-card">
-                            <div class="service-name">${s}</div>
-                            <div class="metric"><span class="metric-label">Replicas</span><span class="metric-value">${d.replicas || 1}</span></div>
-                            <div class="metric"><span class="metric-label">Latency</span><span class="metric-value">${(d.latency || 0).toFixed(3)}s</span></div>
-                            <div class="metric"><span class="metric-label">Arrival Rate (λ)</span><span class="metric-value">${(d.arrivalRate || 0).toFixed(2)}/s</span></div>
-                            <div class="metric"><span class="metric-label">Delta (Δλ)</span><span class="metric-value">${(d.delta || 0).toFixed(2)}</span></div>
-                            <div class="metric"><span class="metric-label">Utilization (ρ)</span><span class="metric-value">${(d.rho || 0).toFixed(2)}</span></div>
-                            <div class="metric"><span class="metric-label">Action</span><span class="metric-value">${d.action || 'NO_ACTION'}</span></div>
-                        </div>`;
-                    }).join('');
-                    
-                    document.getElementById('events').innerHTML = events.slice(-20).reverse().map(e => {
-                        const cls = e.step.includes('SCALE OUT') ? 'scale-out' : e.step.includes('SCALE IN') ? 'scale-in' : 'no-action';
-                        const badge = e.step.includes('SCALE OUT') ? 'badge-out' : e.step.includes('SCALE IN') ? 'badge-in' : 'badge-idle';
-                        return `<div class="event ${cls}">
-                            <div class="event-header">
-                                <span class="event-service">${e.service}</span>
-                                <span class="event-time">${new Date(e.timestamp).toLocaleTimeString()}</span>
-                            </div>
-                            <div class="event-step"><span class="badge ${badge}">${e.step}</span></div>
-                            <div class="event-data">${JSON.stringify(e.data, null, 2)}</div>
-                        </div>`;
-                    }).join('');
-                });
-        }
-        
-        updateDashboard();
-        setInterval(updateDashboard, 2000);
-    </script>
+
+    <div class="formula-block">
+      <div class="formula-name">Steady-State Probability (P₀)</div>
+      <div class="formula-eq">P₀ = 1 / [ Σ(n=0 to N-1) (λ/μ)ⁿ/n! + (λ/μ)ᴺ / (N! × (1-ρ)) ]</div>
+      <div class="formula-desc">Probability that the system is completely idle (zero requests being served). Used to compute queue length.</div>
+    </div>
+
+    <div class="formula-block">
+      <div class="formula-name">Mean Queue Length (Lq)</div>
+      <div class="formula-eq">Lq = P₀ × (λ/μ)ᴺ × ρ / (N! × (1-ρ)²)</div>
+      <div class="formula-desc">Average number of requests waiting in queue (not yet being served). High Lq = system is overloaded.</div>
+    </div>
+
+    <div class="formula-block">
+      <div class="formula-name">Mean Response Time (W)</div>
+      <div class="formula-eq">W = (Lq / λ) + (1 / μ)</div>
+      <div class="formula-desc">Average total time a request spends in the system (waiting + service). SLA bounds: Tmin=0.02s, Tmax=0.08s. W &gt; Tmax → SCALE OUT. W &lt; Tmin → SCALE IN.</div>
+    </div>
+
+    <div class="formula-block">
+      <div class="formula-name">MSO Scale-Out Target</div>
+      <div class="formula-eq">ratio = (λ₂ - λ₁) / λ₁ &nbsp;|&nbsp; target = N + ceil(ratio × N)</div>
+      <div class="formula-desc">When traffic increases by X%, add X% more replicas proportionally. Example: 4 replicas, traffic up 50% → add 2 → target = 6.</div>
+    </div>
+
+    <div class="formula-block">
+      <div class="formula-name">Scale-In Conditions (all 3 must hold OR delta-lambda decreasing for 3 cycles)</div>
+      <div class="formula-eq">W &lt; Tmin AND rho &lt; 0.3 AND (lambda/N) &lt; 0.3 x cap_per_replica</div>
+      <div class="formula-eq">OR: delta-lambda &lt; 0 (arrival rate decreasing) for 3 consecutive cycles</div>
+      <div class="formula-desc">Scale in when response time is well below SLA, utilization is low, and each replica handles less than 30% capacity — OR when arrival rate is consistently decreasing — for 3 consecutive cycles.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ EVENTS -->
+<div id="tab-events" class="content">
+  <div class="filter-bar" id="filterBar">
+    <button class="filter-btn active" onclick="setFilter('ALL',this)">All</button>
+    <button class="filter-btn" onclick="setFilter('SCALE_OUT',this)">Scale Out</button>
+    <button class="filter-btn" onclick="setFilter('SCALE_IN',this)">Scale In</button>
+    <button class="filter-btn" onclick="setFilter('METRICS',this)">Metrics</button>
+  </div>
+  <div class="events-list" id="eventsList"></div>
+</div>
+
+<script>
+const SERVICES = ['auth-service','course-service','seat-service'];
+const SERVICE_COLORS = {'auth-service':'#7c3aed','course-service':'#0891b2','seat-service':'#059669'};
+let state = {};
+let traces = [];
+let events = [];
+let activeFilter = 'ALL';
+let containerHits = {};  // containerId -> hit count this window
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── Filter ─────────────────────────────────────────────────────────────────
+function setFilter(f, el) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  renderEvents();
+}
+
+// ── Fetch all data ─────────────────────────────────────────────────────────
+async function fetchAll() {
+  try {
+    const [s, t, e] = await Promise.all([
+      fetch('/api/state').then(r => r.json()),
+      fetch('/api/request-traces').then(r => r.json()),
+      fetch('/api/events').then(r => r.json())
+    ]);
+    state = s; traces = t; events = e;
+    renderTopology();
+    renderFlow();
+    renderMetrics();
+    renderEvents();
+  } catch(err) { console.error(err); }
+}
+
+function formatW(w) {
+  if (w === 0) return '0.0000s';
+  if (w > 1e10) return w.toExponential(4) + 's';
+  return w.toFixed(4) + 's';
+}
+
+// ── TOPOLOGY ───────────────────────────────────────────────────────────────
+function renderTopology() {
+  const grid = document.getElementById('topologyGrid');
+  grid.innerHTML = SERVICES.map(svc => {
+    const d = state[svc] || {};
+    const replicas = d.replicas || 1;
+    const containers = d.containerIds || [];
+    const lambda = d.lambda || 0;
+    const rho = d.rho || 0;
+    const action = d.lastAction || 'NO_ACTION';
+    const maxLambda = 50;
+    const barPct = Math.min(100, (lambda / maxLambda) * 100);
+
+    // Count hits per container from recent traces
+    const recentTraces = traces.filter(t => t.service === svc).slice(-20);
+    const hitMap = {};
+    recentTraces.forEach(t => { hitMap[t.containerId] = (hitMap[t.containerId] || 0) + 1; });
+
+    const containerIcons = containers.length > 0
+      ? containers.map((cid, i) => {
+          const shortId = cid.split(':')[0] || cid;
+          const hits = hitMap[cid] || 0;
+          return `<div class="container-icon" id="ci-${shortId.replace(/[^a-z0-9]/gi,'_')}">
+            <div class="server active">[ ]</div>
+            <div class="cid" title="${cid}">${shortId.substring(0,10)}</div>
+            <div class="req-count">${hits > 0 ? hits + ' req' : ''}</div>
+          </div>`;
+        }).join('')
+      : Array.from({length: replicas}, (_, i) =>
+          `<div class="container-icon">
+            <div class="server active">[ ]</div>
+            <div class="cid">replica-${i+1}</div>
+            <div class="req-count"></div>
+          </div>`
+        ).join('');
+
+    return `<div class="service-block ${action === 'SCALE_OUT' ? 'scaling-out' : action === 'SCALE_IN' ? 'scaling-in' : ''}">
+      <div class="service-title">
+        ${svc}
+        <span class="badge">${replicas} replica${replicas !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="containers-row">${containerIcons}</div>
+      <div class="lambda-bar-wrap">
+        <div class="lambda-bar-label"><span>λ = ${lambda.toFixed(3)} req/s</span><span>ρ = ${(rho*100).toFixed(1)}%</span></div>
+        <div class="lambda-bar"><div class="lambda-bar-fill" style="width:${barPct}%"></div></div>
+      </div>
+      <div class="service-mini-metrics">
+        <div class="mini-metric"><div class="label">Latency</div><div class="value">${(d.latency||0).toFixed(3)}s</div></div>
+        <div class="mini-metric"><div class="label">W (response)</div><div class="value">${formatW(d.W||0)}</div></div>
+        <div class="mini-metric"><div class="label">Lq (queue)</div><div class="value">${(d.Lq||0).toFixed(3)}</div></div>
+        <div class="mini-metric"><div class="label">mu (svc rate)</div><div class="value">${(d.mu||0).toFixed(2)}/s</div></div>
+      </div>
+      <span class="action-badge action-${action}">${action.replace('_',' ')}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── FLOW ───────────────────────────────────────────────────────────────────
+function renderFlow() {
+  // Canvas animation
+  const canvas = document.getElementById('flowCanvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const svcCount = SERVICES.length;
+  const colW = canvas.width / svcCount;
+
+  SERVICES.forEach((svc, i) => {
+    const d = state[svc] || {};
+    const replicas = d.replicas || 1;
+    const cx = colW * i + colW / 2;
+
+    // Service label
+    ctx.fillStyle = SERVICE_COLORS[svc] || '#a78bfa';
+    ctx.font = '11px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText(svc, cx, 16);
+
+    // Draw containers
+    const containers = d.containerIds || Array.from({length: replicas}, (_, j) => `replica-${j+1}`);
+    const spacing = Math.min(50, (colW - 20) / Math.max(containers.length, 1));
+    const startX = cx - (containers.length - 1) * spacing / 2;
+
+    containers.forEach((cid, j) => {
+      const x = startX + j * spacing;
+      const y = 60;
+      ctx.fillStyle = '#1e3a5f';
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(x - 16, y - 14, 32, 28, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#e0e6ff';
+      ctx.font = '11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('SRV', x, y + 4);
+
+      // Short ID below
+      const shortId = cid.split(':')[0].substring(0, 8);
+      ctx.fillStyle = '#6b7db3';
+      ctx.font = '8px monospace';
+      ctx.fillText(shortId, x, y + 24);
+    });
+
+    // Arrow from top
+    if ((d.lambda || 0) > 0) {
+      ctx.strokeStyle = SERVICE_COLORS[svc] || '#a78bfa';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(cx, 22);
+      ctx.lineTo(cx, 44);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // arrowhead
+      ctx.fillStyle = SERVICE_COLORS[svc] || '#a78bfa';
+      ctx.beginPath();
+      ctx.moveTo(cx, 46);
+      ctx.lineTo(cx - 5, 38);
+      ctx.lineTo(cx + 5, 38);
+      ctx.closePath();
+      ctx.fill();
+    }
+  });
+
+  // Flow log
+  const log = document.getElementById('flowLog');
+  const recent = traces.slice(-15).reverse();
+  log.innerHTML = recent.map(t => {
+    const shortCid = (t.containerId || 'unknown').split(':')[0].substring(0, 14);
+    const time = new Date(t.timestamp).toLocaleTimeString();
+    return `<div class="flow-entry">
+      <span class="arrow">-&gt;</span>
+      <span class="svc">${t.service}</span>
+      <span class="arrow">-&gt;</span>
+      <span class="cid">[srv] ${shortCid}</span>
+      <span class="share">${(t.lambdaShare||0).toFixed(3)} req/s</span>
+      <span class="time">${time}</span>
+    </div>`;
+  }).join('') || '<div style="color:#374151;font-size:12px;padding:8px">No request traces yet — start Locust to generate traffic</div>';
+}
+
+// ── METRICS ────────────────────────────────────────────────────────────────
+function renderMetrics() {
+  const grid = document.getElementById('metricsGrid');
+  grid.innerHTML = SERVICES.map(svc => {
+    const d = state[svc] || {};
+    const rho = d.rho || 0;
+    const W = d.W || 0;
+    const rhoClass = rho > 0.8 ? 'danger' : rho > 0.5 ? 'warn' : 'good';
+    const wClass = W > 0.08 ? 'danger' : W < 0.02 && W > 0 ? 'warn' : 'good';
+    const deltaLambda = d.deltaLambda !== undefined ? d.deltaLambda : 0;
+    const deltaClass = deltaLambda < 0 ? 'warn' : deltaLambda > 0 ? 'good' : '';
+    return `<div class="metric-card">
+      <h3>${svc}</h3>
+      <div class="metric-row"><span class="name">Replicas (N)</span><span class="val">${d.replicas || 1}</span></div>
+      <div class="metric-row"><span class="name">Arrival Rate (lambda)</span><span class="val">${(d.lambda||0).toFixed(4)} req/s</span></div>
+      <div class="metric-row"><span class="name">Delta Lambda</span><span class="val ${deltaClass}">${deltaLambda >= 0 ? '+' : ''}${deltaLambda.toFixed(4)} req/s</span></div>
+      <div class="metric-row"><span class="name">Service Rate (mu)</span><span class="val">${(d.mu||0).toFixed(4)} req/s</span></div>
+      <div class="metric-row"><span class="name">Utilization (rho)</span><span class="val ${rhoClass}">${(rho*100).toFixed(2)}%</span></div>
+      <div class="metric-row"><span class="name">Latency</span><span class="val">${(d.latency||0).toFixed(4)}s</span></div>
+      <div class="metric-row"><span class="name">Queue Length (Lq)</span><span class="val">${(d.Lq||0).toFixed(4)}</span></div>
+      <div class="metric-row"><span class="name">Response Time (W)</span><span class="val ${wClass}">${formatW(W)}</span></div>
+      <div class="metric-row"><span class="name">SLA Tmin / Tmax</span><span class="val">0.02s / 0.08s</span></div>
+      <div class="metric-row"><span class="name">lambda per Replica</span><span class="val">${(d.replicas > 0 ? (d.lambda||0)/(d.replicas||1) : 0).toFixed(4)} req/s</span></div>
+      <div class="metric-row"><span class="name">Last Action</span><span class="val">${d.lastAction || 'NO_ACTION'}</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ── EVENTS ─────────────────────────────────────────────────────────────────
+function renderEvents() {
+  const list = document.getElementById('eventsList');
+  let filtered = events.slice().reverse();
+  if (activeFilter === 'SCALE_OUT') filtered = filtered.filter(e => e.step.includes('SCALE_OUT') || e.step.includes('MSO'));
+  else if (activeFilter === 'SCALE_IN') filtered = filtered.filter(e => e.step.includes('SCALE_IN') || e.step.includes('IDLE'));
+  else if (activeFilter === 'METRICS') filtered = filtered.filter(e => e.step === 'METRICS_COLLECTED');
+
+  list.innerHTML = filtered.slice(0, 60).map(e => {
+    const time = new Date(e.timestamp).toLocaleTimeString();
+    const dataStr = Object.entries(e.data || {})
+      .map(([k,v]) => `${k}: ${typeof v === 'number' ? v.toFixed ? v.toFixed(4) : v : v}`)
+      .join('  |  ');
+    return `<div class="event-card ${e.step}">
+      <div class="event-time">${time}</div>
+      <div class="event-svc">${e.service}</div>
+      <div style="flex:1">
+        <div class="event-step">${e.step}</div>
+        <div class="event-data">${dataStr}</div>
+      </div>
+    </div>`;
+  }).join('') || '<div style="color:#374151;padding:20px;text-align:center">No events yet</div>';
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+fetchAll();
+setInterval(fetchAll, 3000);
+</script>
 </body>
 </html>

@@ -17,16 +17,18 @@ public class AuthChainedService {
     @Value("${seat.service.url}")
     private String seatServiceUrl;
 
-    public String completeRegistrationFlow() {
+    public String completeRegistrationFlow() throws InterruptedException {
         // Step 1: Authenticate (already done by controller delay)
 
         // Step 2: Fetch courses
+        Thread.sleep(200);
         restTemplate.getForObject(
                 courseServiceUrl + "/courses",
                 String.class
         );
 
         // Step 3: Register seat
+        Thread.sleep(200);
         restTemplate.postForObject(
                 seatServiceUrl + "/register",
                 null,

@@ -22,4 +22,16 @@ public class DashboardController {
     public Object getEvents() {
         return dashboardService.getEvents();
     }
+
+    @GetMapping("/api/state")
+    @ResponseBody
+    public Object getState() {
+        return dashboardService.getServiceState();
+    }
+
+    @GetMapping("/api/request-traces")
+    @ResponseBody
+    public Object getRequestTraces() {
+        return dashboardService.getRequestTraces();
+    }
 }
