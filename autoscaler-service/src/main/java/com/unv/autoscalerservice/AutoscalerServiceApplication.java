@@ -11,5 +11,4 @@ public class AutoscalerServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(AutoscalerServiceApplication.class, args);
     }
-
 }

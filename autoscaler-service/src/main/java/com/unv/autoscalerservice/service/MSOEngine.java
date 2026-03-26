@@ -5,41 +5,26 @@ import org.springframework.stereotype.Service;
 @Service
 public class MSOEngine {
 
+    private static final double RHO_TARGET = 0.7; // keep utilization at 70% after scale-out
+
     /**
-     * Calculate optimal replicas using MSO algorithm
-     * Key requirement: If current replicas = 4 and MSO calculates 2, 
-     * the result should be 6 (4 + 2), not 2
+     * MSO: compute minimum N such that rho = lambda / (N * mu) <= RHO_TARGET.
+     * Formula: N_optimal = ceil(lambda / (mu * RHO_TARGET))
+     * Always returns at least currentReplicas + 1 to guarantee progress.
      */
-    public int calculateOptimalReplicas(double lambda1, double lambda2, int currentReplicas) {
-        if (lambda1 <= 0 || lambda2 <= lambda1) {
-            return currentReplicas; // No scaling needed
-        }
-        
-        // Calculate traffic increase ratio
-        double ratio = (lambda2 - lambda1) / lambda1;
-        
-        // MSO calculation: additional replicas needed
-        int additionalReplicas = (int) Math.ceil(ratio * currentReplicas);
-        
-        // Return current + additional (not just additional)
-        return currentReplicas + additionalReplicas;
+    public int calculateOptimalReplicas(double lambda, double mu, int currentReplicas) {
+        if (mu <= 0 || lambda <= 0) return currentReplicas;
+        int optimal = (int) Math.ceil(lambda / (mu * RHO_TARGET));
+        return Math.max(optimal, currentReplicas + 1);
     }
-    
+
     /**
-     * Calculate scale-in decision based on traffic decrease
+     * Scale-in: compute minimum N such that rho = lambda / (N * mu) <= RHO_TARGET.
+     * Same formula — used to jump directly to the right replica count instead of -1 each time.
      */
-    public int calculateScaleInReplicas(double lambda1, double lambda2, int currentReplicas, int minReplicas) {
-        if (lambda1 <= 0 || lambda2 >= lambda1 || currentReplicas <= minReplicas) {
-            return currentReplicas; // No scale-in needed
-        }
-        
-        // Calculate traffic decrease ratio
-        double decreaseRatio = (lambda1 - lambda2) / lambda1;
-        
-        // Calculate replicas to remove (conservative approach)
-        int replicasToRemove = Math.max(1, (int) Math.floor(decreaseRatio * currentReplicas));
-        
-        // Ensure we don't go below minimum
-        return Math.max(minReplicas, currentReplicas - replicasToRemove);
+    public int calculateScaleInReplicas(double lambda, double mu, int minReplicas) {
+        if (mu <= 0 || lambda <= 0) return minReplicas;
+        int optimal = (int) Math.ceil(lambda / (mu * RHO_TARGET));
+        return Math.max(optimal, minReplicas);
     }
 }

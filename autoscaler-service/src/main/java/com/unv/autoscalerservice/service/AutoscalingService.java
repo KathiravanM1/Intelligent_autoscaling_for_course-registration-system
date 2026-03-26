@@ -16,7 +16,7 @@ public class AutoscalingService {
     private static final int MIN_REPLICAS = 1;
     private static final int SCALE_IN_THRESHOLD = 3;
     private static final long COOLDOWN_MS = 90000;
-    private static final double RHO_SCALE_IN_THRESHOLD = 0.4;
+    private static final double RHO_SCALE_IN_THRESHOLD = 0.3;
     private static final double RHO_SCALE_OUT_THRESHOLD = 0.8;
 
     @Value("${scaling.requests-per-replica}")
@@ -127,7 +127,7 @@ public class AutoscalingService {
             double latency = metrics.getLatency();
             double lambda2 = metrics.getArrivalRate();
             double lambda1 = previousArrivalRates.get(service);
-            double delta = lambda2 - lambda1;
+            double delta = metrics.getArrivalRateDelta();
             double mu = (latency > 0) ? 1.0 / latency : 0;
             double rho = (mu > 0 && currentReplicas > 0) ? lambda2 / (currentReplicas * mu) : 0;
             double lambdaPerReplica = (currentReplicas > 0) ? lambda2 / currentReplicas : 0;
@@ -176,37 +176,45 @@ public class AutoscalingService {
 
             System.out.println("\nMFDS DECISION: " + mfds.action);
 
-            if (mfds.action == ScalingAction.SCALE_OUT && currentReplicas < MAX_REPLICAS && delta >= 0) {
-                // Traffic genuinely increasing — scale out
-                int msoTarget = msoEngine.calculateOptimalReplicas(lambda1, lambda2, currentReplicas);
-                int target = Math.min(MAX_REPLICAS, Math.max(msoTarget, currentReplicas + 1));
+            if (mfds.action == ScalingAction.SCALE_OUT) {
+                // Fix 1: MFDS=SCALE_OUT always resets scale-in counter — never scale in while overloaded
+                if (scaleInCounter.get(service) > 0) {
+                    System.out.println("   Scale-in counter RESET — MFDS=SCALE_OUT overrides (was " + scaleInCounter.get(service) + ")");
+                    scaleInCounter.put(service, 0);
+                }
 
-                System.out.println("\nMSO SCALE OUT:");
-                System.out.println("   lambda1=" + String.format("%.3f", lambda1) + "  lambda2=" + String.format("%.3f", lambda2));
-                System.out.println("   rho=" + String.format("%.3f", rho) + "  W=" + formatW(mfds.W));
-                System.out.println("   MSO Target: " + msoTarget + "  Final Target: " + target);
-                System.out.println("   Docker Command: docker service scale autoscale_" + service + "=" + target);
+                if (currentReplicas >= MAX_REPLICAS) {
+                    System.out.println("\nSCALE OUT BLOCKED — already at MAX_REPLICAS=" + MAX_REPLICAS);
 
-                replicas.put(service, target);
-                dockerScalingService.scaleOut(service, target);
-                lastScaleTime.put(service, now);
-                scaleInCounter.put(service, 0);
-                lastAction.put(service, "SCALE_OUT");
+                } else if (delta >= 0) {
+                    // Traffic increasing — MSO computes optimal N via ceil(lambda/mu/0.7)
+                    int msoTarget = msoEngine.calculateOptimalReplicas(lambda2, mu, currentReplicas);
+                    int target    = Math.min(MAX_REPLICAS, msoTarget);
 
-                dashboardService.logEvent(service, "MFDS_MSO_SCALE_OUT", Map.of(
-                    "replicas", target, "action", "SCALE_OUT",
-                    "msoTarget", msoTarget, "rho", rho, "W", mfds.W
-                ));
+                    System.out.println("\nMSO SCALE OUT:");
+                    System.out.println("   lambda=" + String.format("%.3f", lambda2) + "  mu=" + String.format("%.3f", mu));
+                    System.out.println("   rho=" + String.format("%.3f", rho) + "  W=" + formatW(mfds.W));
+                    System.out.println("   MSO Target: ceil(" + String.format("%.3f", lambda2)
+                            + " / (" + String.format("%.3f", mu) + " x 0.7)) = " + msoTarget + "  Final: " + target);
+                    System.out.println("   Docker Command: docker service scale autoscale_" + service + "=" + target);
 
-            } else if (mfds.action == ScalingAction.SCALE_OUT && currentReplicas >= MAX_REPLICAS) {
-                System.out.println("\nSCALE OUT BLOCKED — already at MAX_REPLICAS=" + MAX_REPLICAS);
-                evaluateScaleIn(service, currentReplicas, rho, mfds.W, lambdaPerReplica, delta, now);
+                    replicas.put(service, target);
+                    dockerScalingService.scaleOut(service, target);
+                    lastScaleTime.put(service, now);
+                    lastAction.put(service, "SCALE_OUT");
+
+                    dashboardService.logEvent(service, "MFDS_MSO_SCALE_OUT", Map.of(
+                        "replicas", target, "action", "SCALE_OUT",
+                        "msoTarget", msoTarget, "rho", rho, "W", mfds.W
+                    ));
+
+                } else {
+                    // MFDS=SCALE_OUT but delta<0 — system still overloaded, hold replicas
+                    System.out.println("\nHOLDING — MFDS=SCALE_OUT but delta<0, replicas held at " + currentReplicas);
+                }
 
             } else {
-                // MFDS=SCALE_IN, MFDS=NO_ACTION, or MFDS=SCALE_OUT with delta<0
-                if (mfds.action == ScalingAction.SCALE_OUT && delta < 0) {
-                    System.out.println("\nMFDS=SCALE_OUT but delta-lambda < 0 — evaluating scale-in");
-                }
+                // MFDS=SCALE_IN or MFDS=NO_ACTION — evaluate scale-in conditions
                 evaluateScaleIn(service, currentReplicas, rho, mfds.W, lambdaPerReplica, delta, now);
             }
 
@@ -242,15 +250,21 @@ public class AutoscalingService {
         System.out.println("   lambda/replica < 30% cap:" + capacityLow + " (lambda/r=" + String.format("%.3f", lambdaPerReplica) + ")");
         System.out.println("   delta-lambda < 0:        " + arrivalDecreasing + " (delta=" + String.format("%.3f", delta) + " req/s)");
 
-        boolean anyConditionMet = wUnderUtilized || rhoLow || capacityLow || arrivalDecreasing;
+        boolean anyConditionMet = (wUnderUtilized ? 1 : 0) + (rhoLow ? 1 : 0)
+                                 + (capacityLow ? 1 : 0) + (arrivalDecreasing ? 1 : 0) >= 2;
 
         if (anyConditionMet) {
             int counter = scaleInCounter.get(service) + 1;
             scaleInCounter.put(service, counter);
             System.out.println("   Scale-In Counter:        " + counter + "/" + SCALE_IN_THRESHOLD);
             if (counter >= SCALE_IN_THRESHOLD) {
-                String reason = wUnderUtilized && rhoLow && capacityLow ? "UNDER_UTILIZATION" : "DECREASING_ARRIVAL_RATE";
-                executeScaleIn(service, currentReplicas - 1, now, reason);
+                // MSO computes safe target: ceil(lambda / (mu * 0.7)), never below MIN_REPLICAS
+                double mu = (W > 0 && W < 1e10) ? 1.0 / W : (lambdaPerReplica > 0 ? lambdaPerReplica : 1.0);
+                double currentLambda = lambdaPerReplica * currentReplicas;
+                int safeTarget = msoEngine.calculateScaleInReplicas(currentLambda, 1.0 / (W > 0 && W < 1e10 ? W : 0.1), MIN_REPLICAS);
+                safeTarget = Math.min(safeTarget, currentReplicas - 1); // always remove at least 1
+                String reason = (wUnderUtilized && rhoLow) ? "UNDER_UTILIZATION" : "DECREASING_ARRIVAL_RATE";
+                executeScaleIn(service, safeTarget, now, reason);
             } else {
                 System.out.println("   Waiting for " + (SCALE_IN_THRESHOLD - counter) + " more cycle(s)");
             }
@@ -330,16 +344,35 @@ public class AutoscalingService {
 
     private ServiceMetrics collectMetrics(String service) {
         String uri = switch (service) {
-            case "auth-service" -> "/login";
+            case "auth-service"  -> "/login";
             case "course-service" -> "/courses";
-            case "seat-service" -> "/register";
+            case "seat-service"  -> "/register";
             default -> "/";
         };
-        String latencyQuery = "rate(http_server_requests_seconds_sum{job=\"" + service + "\",uri=\"" + uri + "\"}[2m]) / " +
-                              "rate(http_server_requests_seconds_count{job=\"" + service + "\",uri=\"" + uri + "\"}[2m])";
-        String arrivalQuery = "rate(http_server_requests_seconds_count{job=\"" + service + "\",uri=\"" + uri + "\"}[2m])";
-        double latency = prometheusClient.queryValue(latencyQuery);
-        double arrivalRate = prometheusClient.queryValue(arrivalQuery);
+
+        // Fix 2: Use [2m] as primary window for stable readings across phase transitions.
+        // Fall back to [1m] then [30s] only if no data exists yet (service just started).
+        String[] windows = {"2m", "1m", "30s"};
+        double latency     = 0.0;
+        double arrivalRate = 0.0;
+
+        for (String window : windows) {
+            String latencyQuery  = "rate(http_server_requests_seconds_sum{job=\"" + service
+                    + "\",uri=\"" + uri + "\"}[" + window + "]) / "
+                    + "rate(http_server_requests_seconds_count{job=\"" + service
+                    + "\",uri=\"" + uri + "\"}[" + window + "])";
+            String arrivalQuery  = "rate(http_server_requests_seconds_count{job=\"" + service
+                    + "\",uri=\"" + uri + "\"}[" + window + "])";
+
+            latency     = prometheusClient.queryValue(latencyQuery);
+            arrivalRate = prometheusClient.queryValue(arrivalQuery);
+
+            if (latency > 0 || arrivalRate > 0) {
+                System.out.println("   Metrics window used:     [" + window + "]");
+                break;
+            }
+        }
+
         double delta = arrivalRate - previousArrivalRates.getOrDefault(service, 0.0);
         return new ServiceMetrics(service, latency, arrivalRate, delta);
     }
